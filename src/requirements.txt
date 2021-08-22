@@ -1,0 +1,7 @@
+# Requirements for calcifer talking fireplace RPi project
+
+# Thermocouple Things
+# https://github.com/adafruit/Adafruit_CircuitPython_MAX31856
+adafruit-circuitpython-max31856
+Adafruit-Blinka
+adafruit-circuitpython-busdevice
