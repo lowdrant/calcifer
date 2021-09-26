@@ -3,6 +3,9 @@ TC execution thread
 
 Author: Marion Anderson
 """
+
+__all__ = ['tcjob']
+
 import configparser
 import threading
 from time import time
@@ -11,8 +14,10 @@ import board
 import digitalio
 from adafruit_max31856 import ThermocoupleType, MAX31856
 
-class job(threading.Thread):
-   def  __init__(self, spi=None, cs=None, tctype=None, T_read=None, temp_thresh=None, **thread_kwargs):
+from argparse import ArgumentParser
+
+class tcjob(threading.Thread):
+    def  __init__(self, spi=None, cs=None, tctype=None, T_read=None, temp_thresh=None, **thread_kwargs):
         raise NotImplementedError
         super().__init__(**thread_kwargs)  # init thread class first
 
@@ -93,4 +98,61 @@ class job(threading.Thread):
         raise NotImplementedError
         # TODO: mutex
 
+
+
+parser = ArgumentParser('CLI for thermocouples. ' +
+                        'Also provides thermocouple threading class')
+# TODO: figure out how to choose spi bus
+# parser.add_argument('--spi', type=int, default=0
+#                     help='SPI bus (0,1). Defaults to 0')
+parser.add_argument('--cs', type=str, default='board.D22',
+                    help='CS pin. Defaults to board.D22 (GPIO 22)')
+parser.add_argument('--drdy', type=str, default='board.D27',
+                    help='DRDY pin. Defaults to board.D27 (GPIO 27)')
+parser.add_argument('--type', type=str, default='K',
+                    help='Thermocouple type. Defaults to K.')
+parser.add_argument('--test', action='store_true',
+                    help='Thermocouple testing interface.')
+if __name__ == '__main__':
+    # Parsing
+    # -------
+    args = parser.parse_args()
+    cs = digitalio.DigitalInOut(eval(args.cs))
+    drdy = digitalio.DigitalInOut(eval(args.drdy))
+    tctype = eval(f'ThermocoupleType.{args.type}')
+
+    # Setup
+    # -----
+    spi = board.SPI()
+    cs.direction = digitalio.Direction.OUTPUT
+    drdy.direction = digitalio.Direction.INPUT
+    tc = MAX31856(spi, cs, thermocouple_type=tctype)
+
+    # Reading
+    # -------
+    if not args.test:
+        print(f'\tCurrent temperature: {tc.temperature}\n\tConfig:{args}')
+
+    # Testing
+    # -------
+    else:
+        raise NotImplementedError
+        truetemp = []
+        meastemp = {}  # TODO: autogen keys
+        while True:
+            inp = input('Reference Temperature (or \'quit\'): ')
+            # exit cond
+            if inp.lower() in ('q','quit','exit'):
+                print('End testing...')
+                break
+            # temp cond
+            try:
+                t = float(inp)
+            except Exception as e:
+                print('Bad input')
+                continue
+            else:
+                truetemp.append(t)
+
+        # TODO: compute most likely tc type
 
