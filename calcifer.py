@@ -106,13 +106,14 @@ class Calcifer(object):
 
         Parameters
         ----------
-        tctype : adafruit_max31856.ThermocoupleType attribute
+        tctype : str
             Thermocouple type being read
         """
-        self.tctype = tctype
+        self._tctypestr = tctype
+        self.tctype = eval(f'ThermocoupleType.{tctype}')
         self._configtc()
 
-    def play_soundbyte(self):
+    def soundbyte(self):
         """Play random file from `sounds/` directory."""
         n = randint(0, len(self.soundfns))
         fn = self.soundfns[n]
@@ -149,9 +150,13 @@ parser.add_argument('--characterize', action='store_true',
                     help='Thermocouple characterization interface.')
 parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
+parser.add_argument('--type', default=None,
+                    help='Specify thermocouple type from command line.')
 if __name__ == '__main__':
     args = parser.parse_args()
     job = Calcifer(fnconf=args.fnconf, section=args.section)
+    if args.type is not None:  # set tc type after for simplicity
+        job.set_tc_type(args.type)
 
     if args.oneshot:
         print(f'{job._tctype_str}-type Temperature: {job.temperature}')
