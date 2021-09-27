@@ -7,10 +7,10 @@ Author: Marion Anderson
 
 __all__ = ['Calcifer, temp_all']
 
-import threading
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from pathlib import Path
+from random import randint
 from time import time
 
 import board
@@ -18,6 +18,7 @@ import digitalio
 import matplotlib.pyplot as plt
 from adafruit_max31856 import MAX31856, ThermocoupleType
 from numpy import asarray
+from playsound import playsound
 
 
 def temp_all(spi, cs):
@@ -64,6 +65,8 @@ class Calcifer(object):
         # - b4 tc setup so errors avoid consuming pinout resources
         self.T_read = conf[section]['T_read']
         self.thresh = conf[section]['thresh']
+        self.soundpath = Path(__file__).resolve().parent / 'sounds'
+        self.soundfns = list(self.soundpath.iterdir())
 
         # Thermocouple Setup
         self.spi = eval(conf[section]['spi'])
@@ -109,15 +112,11 @@ class Calcifer(object):
         self.tctype = tctype
         self._configtc()
 
-    def playsound(self, fn):
-        """Play sound through headphone jack.
-
-        Parameters
-        ----------
-        fn : str or pathlib.Path object
-            filename of audio file to play
-        """
-        raise NotImplementedError
+    def play_soundbyte(self):
+        """Play random file from `sounds/` directory."""
+        n = randint(0, len(self.soundfns))
+        fn = self.soundfns[n]
+        playsound(fn)
 
     def run(self):
         """[summary]
