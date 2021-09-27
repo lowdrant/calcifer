@@ -5,3 +5,5 @@
 adafruit-circuitpython-max31856
 Adafruit-Blinka
 adafruit-circuitpython-busdevice
+matplotlib
+numpy
