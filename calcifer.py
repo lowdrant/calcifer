@@ -7,22 +7,22 @@ Author: Marion Anderson
 
 __all__ = ['Calcifer, temp_all']
 
-from argparse import ArgumentParser
+import signal
+import threading
+from argparse import ArgumentError, ArgumentParser
 from configparser import ConfigParser
 from pathlib import Path
 from random import randint
-from time import time
+from time import sleep, time
 
 import board
 import digitalio
-import matplotlib.pyplot as plt
 from adafruit_max31856 import MAX31856, ThermocoupleType
-from numpy import asarray
 from playsound import playsound
 
 
 def temp_all(spi, cs):
-    """Measure thermocouple temperature of all thermocouple types
+    """Measure thermocouple temperature for all thermocouple types.
 
     Parameters
     ----------
@@ -34,21 +34,25 @@ def temp_all(spi, cs):
     Returns
     -------
     dict
-        Temperature measurements paired with TC type
+        Temperature measurements keyed with thermocouple type
 
     See Also
     -------
     adafruit_max31856.MAX31856
+    adafruit_max31856.ThermocoupleType
     """
     assert cs.direction == digitalio.Direction.OUTPUT, 'cs must be output'
     tc_types = [v for v in dir(ThermocoupleType) if '_' not in v]  # strs
     outdict = {}
     for k in tc_types:
-        tc = MAX31856(spi, cs, thermocouple_type=eval(f'ThermocoupleType.{k}'))
-        outdict.update({k:tc.temperature})
+        tctype = eval(f'ThermocoupleType.{k}')
+        tc = MAX31856(spi, cs, thermocouple_type=tctype)
+        outdict.update({k: tc.temperature})
     return outdict
 
 
+# TODO: implement logger
+# TODO: document attributes
 class Calcifer(object):
     def  __init__(self, fnconf=None, section='DEFAULT', **kwargs_tc):
         # Config Setup
@@ -61,10 +65,15 @@ class Calcifer(object):
         for k,v in kwargs_tc:
             conf[section][k] = v
 
+        # consts
+        self._buflen = 2
+
         # Operating Params
         # - b4 tc setup so errors avoid consuming pinout resources
-        self.T_read = conf[section]['T_read']
-        self.thresh = conf[section]['thresh']
+        self.T_read = float(conf[section]['T_read'])
+        self.T_going = float(conf[section]['T_going'])
+        self.thresh = float(conf[section]['thresh'])
+        self.off_thresh = float(conf[section]['off_thresh'])
         self.soundpath = Path(__file__).resolve().parent / 'sounds'
         self.soundfns = list(self.soundpath.iterdir())
 
@@ -79,9 +88,10 @@ class Calcifer(object):
         self._configtc()
 
         # Setup
-        self.clr_tempbuf()  # set self.tempbuf
-        self.t_lastread = 0
+        self.clr_tempbuf()  # set self.tempbuf, self.bufndx
         self.fire_going = False
+        self.thread = None
+        self.go = False
 
     def _configtc(self):
         """Update `self.tc` with current spi, cs, tctype params."""
@@ -93,13 +103,16 @@ class Calcifer(object):
         return self.tc.temperature
 
     def clr_tempbuf(self):
-        """Clear temperature buffer."""
-        self.tempbuf = [None,None]
+        """Fill temperature buffer with zeros & reset buffer index."""
+        self.tempbuf = [0 for i in range(self._buflen)]
+        self.bufndx = 0
 
     def update_tempbuf(self):
-        """Update self.tempbuf using self.get_temp()."""
-        self.tempbuf[0] = self.tempbuf[1]
-        self.tempbuf[1] = self.temperature
+        """Update self.tempbuf circular buffer."""
+        # move ndx to ndx to be filled w/data, not next ndx
+        self.bufndx = (self.bufndx + 1) % self._buflen
+        self.tempbuf[self.bufndx] = self.temperature
+        # TODO: log drdy state
 
     def set_tc_type(self, tctype):
         """Update thermocouple type.
@@ -107,7 +120,11 @@ class Calcifer(object):
         Parameters
         ----------
         tctype : str
-            Thermocouple type being read
+            Thermocouple type being read; attribute of `ThermocoupleType`
+
+        See Also
+        --------
+        adafruit_max31856.ThermocoupleType
         """
         self._tctypestr = tctype
         self.tctype = eval(f'ThermocoupleType.{tctype}')
@@ -115,29 +132,46 @@ class Calcifer(object):
 
     def soundbyte(self):
         """Play random file from `sounds/` directory."""
-        n = randint(0, len(self.soundfns))
+        n = randint(0, len(self.soundfns)-1)
         fn = self.soundfns[n]
         playsound(fn)
 
-    def run(self):
-        """[summary]
-
-        Raises
-        ------
-        NotImplementedError
-            [description]
-        """
+    def _run(self):
+        """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
-            while not self.fire_going:
-                if time() - self.t_lastread > self.T_read:
-                    self.update_tempbuf()
-                    self.t_lastread = time()
-                if self.tempbuf[0] < self.temp_thresh and self.tempbuf[1] < self.temp_thresh:
-                    self.playsound()
-                    self.update_tempbuf()  # prevent continuous sound playing
+            self.update_tempbuf()
+            print(self.tempbuf)  # TODO: log temp
+            if self.fire_going:
+                if self.tempbuf[self.bufndx] < off_thresh:
+                    self.fire_going = False
+                sleep(self.T_going)
+            else:
+                n1, n2 = self.bufndx, (self.bufndx-1)%self._buflen
+                if self.tempbuf[n1]>=self.thresh and self.tempbuf[n2]<self.thresh:
+                    # TODO: log thresh cross
+                    self.soundbyte()
                     self.fire_going = True
-            while self.fire_going:
-                raise NotImplementedError
+                sleep(self.T_read)
+
+    def start(self):
+        """Start Calcifer mainloop thread."""
+        if self.go:
+            # TODO: log err
+            return
+        self.go = True
+        self.thread = threading.Thread(target=self._run, args=())
+        self.thread.start()
+
+    def stop(self):
+        """Stop Calcifer mainloop thread."""
+        if self.thread is None:
+            # TODO: log err
+            return
+        if not self.go:
+            # TODO: log err
+            return
+        self.go = False
+        self.thread.join()
 
 
 parser = ArgumentParser('CLI for thermocouples. ' +
@@ -152,16 +186,21 @@ parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
 parser.add_argument('--type', default=None,
                     help='Specify thermocouple type from command line.')
+parser.add_argument('--run', action='store_true', help='Start Calcifer process')
+parser.add_argument('--bg', action='store_true', help='Run calcifer process in background.')
+parser.add_argument('--stop', action='store_true', help='Stop Calcifer process')
 if __name__ == '__main__':
     args = parser.parse_args()
     job = Calcifer(fnconf=args.fnconf, section=args.section)
-    if args.type is not None:  # set tc type after for simplicity
+    if args.type is not None:  # set tc type after init for simplicity
         job.set_tc_type(args.type)
 
     if args.oneshot:
         print(f'{job._tctype_str}-type Temperature: {job.temperature}')
 
     if args.characterize:
+        import matplotlib.pyplot as plt  # numerics only used here; import
+        from numpy import asarray  # here to avoid slowing startup
         truetemp = []
         meastemp = []
         while True:
@@ -188,13 +227,14 @@ if __name__ == '__main__':
         errtemp = {k:v-truetemp for k,v in meastemp.items()}
         print('End computations')
 
+        print('Plotting...')
         fig, ax = plt.subplots(ncols=2, num='tc-characterization')
         # Measurement Plot
         ax[0].set_title('Temperature Measurements')
         ax[0].set_ylabel('Temperature [deg C]')
         ax[0].set_xlabel('sample')
         for k,v in meastemp_dict.items():
-            ax[0].plot(v, '.-', label=f'{k}', marker=f'${k}$')
+            ax[0].plot(v, '-', label=f'{k}', marker=f'${k}$')
         # plot ground truth last for color matching b/t subplots
         ax[0].plot(truetemp, '.-', label='Ground Truth')
         ax[0].legend()
@@ -204,7 +244,20 @@ if __name__ == '__main__':
         ax[1].set_ylabel('Temperature Error [deg C]')
         ax[1].set_xlabel('sample')
         for k,v in errtemp.items():
-            ax[1].plot(v, '.-', label=f'{k}', marker=f'${k}$')
+            ax[1].plot(v, '-', label=f'{k}', marker=f'${k}$')
         ax[1].legend()
 
         plt.show()
+
+    if args.bg:
+        import subprocess  # subprocess only used here
+        fnpath = Path(__file__).resolve()
+        argstr = f'--run --fnconf={fnconf} --section={section} --type={type}'
+        subprocess.run(f'python3 {fnpath} --run &')
+
+    if args.run:
+        job.start()
+
+    if args.stop:
+        raise NotImplementedError
+        # TODO: send signal.USR1
