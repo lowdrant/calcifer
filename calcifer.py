@@ -17,8 +17,8 @@ from time import sleep, time
 
 import board
 import digitalio
+import pygame  # https://github.com/TaylorSMarks/playsound/issues/16
 from adafruit_max31856 import MAX31856, ThermocoupleType
-from playsound import playsound
 
 
 def temp_all(spi, cs):
@@ -134,7 +134,12 @@ class Calcifer(object):
         """Play random file from `sounds/` directory."""
         n = randint(0, len(self.soundfns)-1)
         fn = self.soundfns[n]
-        playsound(fn)
+        # https://github.com/TaylorSMarks/playsound/issues/16
+        pygame.mixer.init()
+        pygame.mixer.music.load("myFile.wav")
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            continue
 
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
@@ -142,12 +147,11 @@ class Calcifer(object):
             self.update_tempbuf()
             print(self.tempbuf)  # TODO: log temp
             if self.fire_going:
-                if self.tempbuf[self.bufndx] < off_thresh:
+                if self.tempbuf[self.bufndx] < self.off_thresh:
                     self.fire_going = False
                 sleep(self.T_going)
             else:
-                n1, n2 = self.bufndx, (self.bufndx-1)%self._buflen
-                if self.tempbuf[n1]>=self.thresh and self.tempbuf[n2]<self.thresh:
+                if self.tempbuf[self.bufndx] > self.thresh:
                     # TODO: log thresh cross
                     self.soundbyte()
                     self.fire_going = True
@@ -160,7 +164,12 @@ class Calcifer(object):
             return
         self.go = True
         self.thread = threading.Thread(target=self._run, args=())
+        self.thread.daemon = True
         self.thread.start()
+
+    def join(self):
+        """Equivalent to `thread.join`"""
+        self.thread.join()
 
     def stop(self):
         """Stop Calcifer mainloop thread."""
@@ -186,9 +195,9 @@ parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
 parser.add_argument('--type', default=None,
                     help='Specify thermocouple type from command line.')
-parser.add_argument('--run', action='store_true', help='Start Calcifer process')
+parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
 parser.add_argument('--bg', action='store_true', help='Run calcifer process in background.')
-parser.add_argument('--stop', action='store_true', help='Stop Calcifer process')
+parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop')
 if __name__ == '__main__':
     args = parser.parse_args()
     job = Calcifer(fnconf=args.fnconf, section=args.section)
@@ -257,7 +266,9 @@ if __name__ == '__main__':
 
     if args.run:
         job.start()
+        job.join()
 
     if args.stop:
         raise NotImplementedError
+        # TODO: find all 'calcifer' processes
         # TODO: send signal.USR1
