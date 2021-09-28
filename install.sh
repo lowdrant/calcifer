@@ -11,10 +11,7 @@ mkdir -p ~/sdl-src && tar -xvf ~/sdl.tar.gz --strip-components 1 -C ~/sdl-src &&
 cd ~/sdl-src
 ./configure --enable-video-kmsdrm
 make -j4 && sudo make install
-g++ main.c `pkg-config --cflags --libs sdl2`
-./a.out
-ret=$?
-echo "ret: $ret"
+rm -rf ~/sdl-src
 
 # Python Reqs
 cd "$scriptdir"

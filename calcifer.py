@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
 TC execution thread
+TODO: document
 
 Author: Marion Anderson
 """
 
 __all__ = ['Calcifer, temp_all']
 
-import signal
-import threading
 from argparse import ArgumentError, ArgumentParser
 from configparser import ConfigParser
 from pathlib import Path
 from random import randint
+from threading import Thread
 from time import sleep, time
 
 import board
 import digitalio
-import pygame  # https://github.com/TaylorSMarks/playsound/issues/16
 from adafruit_max31856 import MAX31856, ThermocoupleType
+from pygame import mixer  # https://github.com/TaylorSMarks/playsound/issues/16
 
 
 def temp_all(spi, cs):
@@ -52,6 +52,7 @@ def temp_all(spi, cs):
 
 
 # TODO: implement logger
+# TODO: implement signal handling for external shutdown sig
 # TODO: document attributes
 class Calcifer(object):
     def  __init__(self, fnconf=None, section='DEFAULT', **kwargs_tc):
@@ -86,6 +87,11 @@ class Calcifer(object):
         self.tctype = eval(f'ThermocoupleType.{conf[section]["tctype"]}')
         self._tctype_str = conf[section]['tctype']  # for debugging
         self._configtc()
+
+        # Power Relay Setup
+        self.relay = digitalio.DigitalInOut(eval(conf[section]['relay']))
+        self.relay.direction = digitalio.Direction.OUTPUT
+        self.relay.pull = digitalio.Pull.DOWN
 
         # Setup
         self.clr_tempbuf()  # set self.tempbuf, self.bufndx
@@ -135,10 +141,10 @@ class Calcifer(object):
         n = randint(0, len(self.soundfns)-1)
         fn = self.soundfns[n]
         # https://github.com/TaylorSMarks/playsound/issues/16
-        pygame.mixer.init()
-        pygame.mixer.music.load("myFile.wav")
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
+        mixer.init()
+        mixer.music.load(fn)
+        mixer.music.play()
+        while mixer.music.get_busy():
             continue
 
     def _run(self):
@@ -163,7 +169,7 @@ class Calcifer(object):
             # TODO: log err
             return
         self.go = True
-        self.thread = threading.Thread(target=self._run, args=())
+        self.thread = Thread(target=self._run, args=())
         self.thread.daemon = True
         self.thread.start()
 
@@ -182,6 +188,13 @@ class Calcifer(object):
         self.go = False
         self.thread.join()
 
+    def powercycle_max(self):
+        """Power cycle max chip using relay on relay pin."""
+        self.relay.value = True
+        sleep(0.01)  # empirically determined
+        self.relay.value = False
+        self._configtc()
+
 
 parser = ArgumentParser('CLI for thermocouples. ' +
                         'Also provides thermocouple threading class')
@@ -196,7 +209,7 @@ parser.add_argument('--oneshot', action='store_true',
 parser.add_argument('--type', default=None,
                     help='Specify thermocouple type from command line.')
 parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
-parser.add_argument('--bg', action='store_true', help='Run calcifer process in background.')
+parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in background.')
 parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop')
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -265,8 +278,11 @@ if __name__ == '__main__':
         subprocess.run(f'python3 {fnpath} --run &')
 
     if args.run:
+        import signal
         job.start()
         job.join()
+        # TODO: register signal handler
+        # TODO: signal.pause() instead of .join?
 
     if args.stop:
         raise NotImplementedError
