@@ -97,6 +97,7 @@ class Calcifer(object):
         self.relay = digitalio.DigitalInOut(eval(conf[section]['relay']))
         self.relay.direction = digitalio.Direction.OUTPUT
         self.relay.value = 0
+        self.relay_delay = float(conf[section]['relay_delay'])
 
         # Indicator LED Setup
         self.led = digitalio.DigitalInOut(eval(conf[section]['led']))
@@ -230,7 +231,7 @@ class Calcifer(object):
     def powercycle_max(self):
         """Power cycle max chip using relay on relay pin."""
         self.relay.value = True
-        sleep(0.01)  # empirically determined
+        sleep(self.relay_delay)  # TODO: empirically determined
         self.relay.value = False
         self._configtc()
 
@@ -250,6 +251,7 @@ parser.add_argument('--type', type=str, default='K',
 parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
 parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in background.')
 parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop')
+
 if __name__ == '__main__':
     args = parser.parse_args()
     job = Calcifer(fnconf=args.fnconf, section=args.section)
@@ -317,10 +319,9 @@ if __name__ == '__main__':
         Popen(['python3', fn, f'--fnconf={job.fnconf}',
                f'--section={args.section}', f'--type={args.type}', '--run'])
 
-
     if args.run:
         job.start()
         job.join()
 
     if args.stop:
-        job.stop(join=False)
+        job.stop(join=False)  # can't join; threads on diff Calcifer instance
