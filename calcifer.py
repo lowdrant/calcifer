@@ -98,6 +98,11 @@ class Calcifer(object):
         self.relay.direction = digitalio.Direction.OUTPUT
         self.relay.value = 0
 
+        # Indicator LED Setup
+        self.led = digitalio.DigitalInOut(eval(conf[section]['led']))
+        self.led.direction = digitalio.Direction.OUTPUT
+        self.led.value = 0
+
         # Socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.host = conf[section]['host']
@@ -161,8 +166,10 @@ class Calcifer(object):
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
+            self.led.vaule = (self.led.value+1) % 2  # toggle led
             self.update_tempbuf()
-            print(self.tempbuf)  # TODO: log temp
+            # TODO: log temp
+
             if self.fire_going:
                 if self.tempbuf[self.bufndx] < self.off_thresh:
                     self.fire_going = False
