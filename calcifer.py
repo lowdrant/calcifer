@@ -62,13 +62,12 @@ class Calcifer(object):
         # Config Setup
         if fnconf is None:
             fnconf = Path(__file__).resolve().parent / 'calcifer.ini'
-        self.fnconf = fnconf
-        self.section = section
+        self.fnconf = fnconf  # for --bg cli simply access
         conf = ConfigParser()
         conf.read(fnconf)
 
         # Overwrite Config File
-        for k,v in kwargs_tc:
+        for k, v in kwargs_tc:
             conf[section][k] = v
 
         # consts
