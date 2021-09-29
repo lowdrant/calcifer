@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -o errexit
-scriptdir="$(dirname "($realpath "$0")")"
+scriptdir="$(dirname "$(realpath "$0")")"
 
 # Install PyGame dependencies
 # https://stackoverflow.com/questions/57672568/sdl2-on-raspberry-pi-without-x
@@ -15,7 +15,7 @@ rm -rf ~/sdl-src
 
 # Python Reqs
 cd "$scriptdir"
-pip3 install -r "$scriptdir/requirements.txt"
+pip3 install -r "$scriptdir/requirements.txt" --no-cache-dir
 
 # TODO: edit rc.local
 # TODO: put symlink in bin

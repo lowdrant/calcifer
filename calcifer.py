@@ -3,11 +3,14 @@
 TC execution thread
 TODO: document
 
+Interrupt thread by connecting to 127.0.01 at port in calcifer.ini
+
 Author: Marion Anderson
 """
 
 __all__ = ['Calcifer, temp_all']
 
+import socket
 from argparse import ArgumentError, ArgumentParser
 from configparser import ConfigParser
 from pathlib import Path
@@ -59,6 +62,8 @@ class Calcifer(object):
         # Config Setup
         if fnconf is None:
             fnconf = Path(__file__).resolve().parent / 'calcifer.ini'
+        self.fnconf = fnconf
+        self.section = section
         conf = ConfigParser()
         conf.read(fnconf)
 
@@ -91,12 +96,18 @@ class Calcifer(object):
         # Power Relay Setup
         self.relay = digitalio.DigitalInOut(eval(conf[section]['relay']))
         self.relay.direction = digitalio.Direction.OUTPUT
-        self.relay.pull = digitalio.Pull.DOWN
+        self.relay.value = 0
+
+        # Socket
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.host = conf[section]['host']
+        self.port = int(conf[section]['port'])
+        self.sockthread = None
 
         # Setup
         self.clr_tempbuf()  # set self.tempbuf, self.bufndx
         self.fire_going = False
-        self.thread = None
+        self.runthread = None
         self.go = False
 
     def _configtc(self):
@@ -163,30 +174,51 @@ class Calcifer(object):
                     self.fire_going = True
                 sleep(self.T_read)
 
+    def _listen(self):
+        """Listen for shutoff command from socket."""
+        while self.go:
+            self.sock.listen()
+            conn, addr = self.sock.accept()
+            data = conn.recv(128).decode('utf-8')
+            # TODO: log received connections
+            if data == 'off':
+                self.go = False
+                self.sock.close()
+            print(data, self.go)
+
     def start(self):
         """Start Calcifer mainloop thread."""
         if self.go:
             # TODO: log err
             return
+        try:
+            self.sock.bind(('127.0.0.1', self.port))
+        except socket.error as e:
+            print(e)
+            return
         self.go = True
-        self.thread = Thread(target=self._run, args=())
-        self.thread.daemon = True
-        self.thread.start()
+        # calcifer thread
+        self.runthread = Thread(target=self._run, args=())
+        self.runthread.daemon = True
+        # shutoff command socket thread
+        self.sockthread = Thread(target=self._listen, args=())
+        self.sockthread.daemon = True
+        self.runthread.start()
+        self.sockthread.start()
 
     def join(self):
         """Equivalent to `thread.join`"""
-        self.thread.join()
+        self.sockthread.join()
+        self.runthread.join()
 
-    def stop(self):
+    def stop(self, join=True):
         """Stop Calcifer mainloop thread."""
-        if self.thread is None:
-            # TODO: log err
-            return
-        if not self.go:
-            # TODO: log err
-            return
-        self.go = False
-        self.thread.join()
+        # use socket to enforce
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect( (self.host, self.port) )
+            sock.sendall(b'off')
+        if join:
+            self.join()
 
     def powercycle_max(self):
         """Power cycle max chip using relay on relay pin."""
@@ -206,7 +238,7 @@ parser.add_argument('--characterize', action='store_true',
                     help='Thermocouple characterization interface.')
 parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
-parser.add_argument('--type', default=None,
+parser.add_argument('--type', type=str, default='K',
                     help='Specify thermocouple type from command line.')
 parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
 parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in background.')
@@ -272,19 +304,16 @@ if __name__ == '__main__':
         plt.show()
 
     if args.bg:
-        import subprocess  # subprocess only used here
-        fnpath = Path(__file__).resolve()
-        argstr = f'--run --fnconf={fnconf} --section={section} --type={type}'
-        subprocess.run(f'python3 {fnpath} --run &')
+        from subprocess import Popen  # subprocess only used here
+        act = Path(__file__).resolve().parent / 'env/bin/activate'
+        fn = Path(__file__).resolve()
+        Popen(['python3', fn, f'--fnconf={job.fnconf}',
+               f'--section={args.section}', f'--type={args.type}', '--run'])
+
 
     if args.run:
-        import signal
         job.start()
         job.join()
-        # TODO: register signal handler
-        # TODO: signal.pause() instead of .join?
 
     if args.stop:
-        raise NotImplementedError
-        # TODO: find all 'calcifer' processes
-        # TODO: send signal.USR1
+        job.stop(join=False)
