@@ -4,24 +4,31 @@ TC execution thread
 TODO: document
 
 Interrupt thread by connecting to 127.0.01 at port in calcifer.ini
+and sending b'off' to socket
+
+# TODO: document hysterysis temperature state interface
 
 Author: Marion Anderson
 """
 
 __all__ = ['Calcifer, temp_all']
 
-import socket
 from argparse import ArgumentError, ArgumentParser
 from configparser import ConfigParser
+from logging import (CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter, Logger,
+                     StreamHandler)
 from pathlib import Path
 from random import randint
+from socket import AF_INET, SOCK_STREAM
+from socket import error as sock_error
+from socket import socket
+from sys import stdout
 from threading import Thread
-from time import sleep, time
+from time import sleep
 
 import board
 import digitalio
 from adafruit_max31856 import MAX31856, ThermocoupleType
-from pygame import mixer  # https://github.com/TaylorSMarks/playsound/issues/16
 
 
 def temp_all(spi, cs):
@@ -54,9 +61,8 @@ def temp_all(spi, cs):
     return outdict
 
 
-# TODO: implement logger
-# TODO: implement signal handling for external shutdown sig
 # TODO: document attributes
+# TODO: determine reason to toggle max chip power
 class Calcifer(object):
     def  __init__(self, fnconf=None, section='DEFAULT', **kwargs_tc):
         # Config Setup
@@ -70,17 +76,42 @@ class Calcifer(object):
         for k, v in kwargs_tc:
             conf[section][k] = v
 
-        # consts
-        self._buflen = 2
-
-        # Operating Params
-        # - b4 tc setup so errors avoid consuming pinout resources
+        # Read Config Params
+        # - before major setup so errors avoid consuming resources
+        # timing params
         self.T_read = float(conf[section]['T_read'])
         self.T_going = float(conf[section]['T_going'])
+        self.T_hbeat = float(conf[section]['T_hbeat'])
+        self.relay_delay = float(conf[section]['relay_delay'])
+        # hysterysis temperature state thresholds
         self.thresh = float(conf[section]['thresh'])
         self.off_thresh = float(conf[section]['off_thresh'])
+        # sound files
         self.soundpath = Path(__file__).resolve().parent / 'sounds'
         self.soundfns = list(self.soundpath.iterdir())
+        # socket connections
+        self.host = conf[section]['host']
+        self.port = int(conf[section]['port'])
+        # thermocouple
+        self._tctype_str = conf[section]['tctype']  # for debugging
+        self.tctype =  eval(f'ThermocoupleType.{conf[section]["tctype"]}')
+        # logging
+        self.logger = Logger(__file__)
+        loglevel = eval(f'{conf[section]["loglevel"]}')
+        handler = StreamHandler(stdout)
+        handler.setLevel(loglevel)
+        formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+
+        # Internal Setup
+        self._buflen = 2  # buffer length
+        self.clr_tempbuf()  # set self.tempbuf, self.bufndx
+        self.fire_going = False
+        self.runthread = None
+        self.sockthread = None
+        self.hbeatthread = None
+        self.go = False
 
         # Thermocouple Setup
         self.spi = eval(conf[section]['spi'])
@@ -88,35 +119,32 @@ class Calcifer(object):
         self.cs.direction = digitalio.Direction.OUTPUT
         self.drdy = digitalio.DigitalInOut(eval(conf[section]['drdy']))
         self.drdy.direction = digitalio.Direction.INPUT
-        self.tctype = eval(f'ThermocoupleType.{conf[section]["tctype"]}')
-        self._tctype_str = conf[section]['tctype']  # for debugging
         self._configtc()
 
         # Power Relay Setup
         self.relay = digitalio.DigitalInOut(eval(conf[section]['relay']))
         self.relay.direction = digitalio.Direction.OUTPUT
         self.relay.value = 0
-        self.relay_delay = float(conf[section]['relay_delay'])
 
         # Indicator LED Setup
         self.led = digitalio.DigitalInOut(eval(conf[section]['led']))
         self.led.direction = digitalio.Direction.OUTPUT
         self.led.value = 0
 
-        # Socket
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.host = conf[section]['host']
-        self.port = int(conf[section]['port'])
-        self.sockthread = None
+        # Socket Setup
+        self.sock = socket(AF_INET, SOCK_STREAM)
 
-        # Setup
-        self.clr_tempbuf()  # set self.tempbuf, self.bufndx
-        self.fire_going = False
-        self.runthread = None
-        self.go = False
+
+        # Log
+        self.logger.debug(f'Conf Settings:{conf}')
 
     def _configtc(self):
-        """Update `self.tc` with current spi, cs, tctype params."""
+        """Update `self.tc` with current spi, cs, tctype params.
+
+        Notes
+        -----
+        Uses SPI bus, so can only be called after SPI bus setup
+        """
         self.tc = MAX31856(self.spi, self.cs, thermocouple_type=self.tctype)
 
     @property
@@ -131,10 +159,10 @@ class Calcifer(object):
 
     def update_tempbuf(self):
         """Update self.tempbuf circular buffer."""
-        # move ndx to ndx to be filled w/data, not next ndx
+        # set bufndx as index just filled with data
         self.bufndx = (self.bufndx + 1) % self._buflen
+        self.logger.debug(f'drdy before read:{self.drdy.value}')
         self.tempbuf[self.bufndx] = self.temperature
-        # TODO: log drdy state
 
     def set_tc_type(self, tctype):
         """Update thermocouple type.
@@ -166,23 +194,29 @@ class Calcifer(object):
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
-            self.led.vaule = (self.led.value+1) % 2  # toggle led
             self.update_tempbuf()
-            # TODO: log temp
+            self.logger.debug(f'tempbuf:{self.tempbuf}')
+            self.logger.debug(f'fire_going:{self.fire_going}')
 
             if self.fire_going:
                 if self.tempbuf[self.bufndx] < self.off_thresh:
                     self.fire_going = False
+                    self.logger.info(f'Fire no longer going')
                 sleep(self.T_going)
+
             else:
                 if self.tempbuf[self.bufndx] > self.thresh:
                     # TODO: log thresh cross
                     self.soundbyte()
                     self.fire_going = True
+                    self.logger.info(f'Fire going')
                 sleep(self.T_read)
 
+        self.logger.debug(f'run thread exited. go:{self.go}')
+        self.logger.info('Calcifer program ended.')
+
     def _listen(self):
-        """Listen for shutoff command from socket."""
+        """Shutoff command listener thread. Controlled by `self.go` attribute."""
         while self.go:
             self.sock.listen()
             conn, addr = self.sock.accept()
@@ -191,17 +225,30 @@ class Calcifer(object):
             if data == 'off':
                 self.go = False
                 self.sock.close()
-            print(data, self.go)
+                self.logger.info('Shutoff signal recieved. Shutting down...')
+            self.logger.debug(
+                f'socket connection; conn:{conn} addr:{addr} data:{data} go:{self.go}'
+            )
+        self.logger.debug(f'listen thread exited. go:{self.go}')
+
+    def _hbeat(self):
+        """Heartbeat LED execution thread. Controlled by `self.go` attribute."""
+        while self.go:
+            self.led.value = (self.led.value+1)%2 if (self.T_hbeat>0) else 0  # no hbeat case
+            sleep(self.T_hbeat)
+        self.led.value = 0  # turn off led when ending program
+        self.logger.debug(f'hbeat thread exited. go:{self.go}')
 
     def start(self):
         """Start Calcifer mainloop thread."""
         if self.go:
-            # TODO: log err
+            self.logger.error('start called but go already True')
             return
         try:
             self.sock.bind(('127.0.0.1', self.port))
-        except socket.error as e:
+        except sock_error as e:
             print(e)
+            self.logger.error(f'start called but 127.0.0.1:{self.port} already in use')
             return
         self.go = True
         # calcifer thread
@@ -210,20 +257,33 @@ class Calcifer(object):
         # shutoff command socket thread
         self.sockthread = Thread(target=self._listen, args=())
         self.sockthread.daemon = True
+        # heartbeat thread
+        self.hbeatthread = Thread(target=self._hbeat, args=())
+        self.hbeatthread.daemon = True
+        # start threads
         self.runthread.start()
         self.sockthread.start()
+        self.hbeatthread.start()
 
     def join(self):
         """Equivalent to `thread.join`"""
+        self.hbeatthread.join()
         self.sockthread.join()
         self.runthread.join()
+        self.logger.debug('All threads have join')
 
-    def stop(self, join=True):
-        """Stop Calcifer mainloop thread."""
+    def stop(self, join=False):
+        """Stop Calcifer mainloop thread.
+
+        Parameters
+        ----------
+        join : bool, optional
+            Whether or not to join instance's run threads, by default False
+        """
         # use socket to enforce
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        with socket(AF_INET, SOCK_STREAM) as sock:
             sock.connect( (self.host, self.port) )
-            sock.sendall(b'off')
+            sock.sendall( b'off' )
         if join:
             self.join()
 
@@ -232,7 +292,7 @@ class Calcifer(object):
         self.relay.value = True
         sleep(self.relay_delay)  # TODO: empirically determined
         self.relay.value = False
-        self._configtc()
+        self._configtc()  # call to ensure correct tc chip configuration
 
 
 parser = ArgumentParser('CLI for thermocouples. ' +
@@ -319,6 +379,8 @@ if __name__ == '__main__':
                f'--section={args.section}', f'--type={args.type}', '--run'])
 
     if args.run:
+        # https://github.com/TaylorSMarks/playsound/issues/16
+        from pygame import mixer  # pygame only used here
         job.start()
         job.join()
 
