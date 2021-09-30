@@ -84,7 +84,7 @@ def temp_all(spi, cs):
 
 # TODO: document attributes
 class Calcifer(object):
-    def  __init__(self, fnconf=None, section='DEFAULT', **kwargs_tc):
+    def  __init__(self, fnconf=None, section='DEFAULT', **kwargs):
         # Config Setup
         if fnconf is None:
             fnconf = Path(__file__).resolve().parent / 'calcifer.ini'
@@ -93,7 +93,7 @@ class Calcifer(object):
         conf.read(fnconf)
 
         # Overwrite Config File
-        for k, v in kwargs_tc:
+        for k, v in kwargs.items():
             conf[section][k] = v
 
         # Read Config Params
@@ -137,6 +137,7 @@ class Calcifer(object):
         self.cs.direction = digitalio.Direction.OUTPUT
         self.drdy = digitalio.DigitalInOut(eval(conf[section]['drdy']))
         self.drdy.direction = digitalio.Direction.INPUT
+        self.drdy.pull = digitalio.Pull.DOWN
         self._configtc()
 
         # Power Relay Setup
@@ -148,6 +149,11 @@ class Calcifer(object):
         self.led = digitalio.DigitalInOut(eval(conf[section]['led']))
         self.led.direction = digitalio.Direction.OUTPUT
         self.led.value = 0
+
+        # Sound Control Switch Setup
+        self.soundswitch = digitalio.DigitalInOut(eval(conf[section]['soundswitch']))
+        self.soundswitch.direction = digitalio.Direction.INPUT
+        self.soundswitch.pull = digitalio.Pull.UP
 
         # Socket Setup
         self.sock = socket(AF_INET, SOCK_STREAM)
@@ -263,7 +269,10 @@ class Calcifer(object):
             else:
                 if self.tempbuf[self.bufndx] > self.thresh:
                     # TODO: log thresh cross
-                    self.soundbyte()
+                    if self.soundswitch.value:
+                        self.soundbyte()
+                    else:
+                        self.logger.info('soundswitch low; not playing sound')
                     self.fire_going = True
                     self.logger.info(f'Fire going, tempbuf:{self.tempbuf}')
                 sleep(self.T_read)
@@ -373,11 +382,12 @@ parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop'
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    job = Calcifer(fnconf=args.fnconf, section=args.section)
+    kwargs = {}
     if args.type is not None:  # set tc type after init for simplicity
-        job.set_tc_type(args.type)
+        kwargs.update({'tctype':args.type})
     if args.loglevel is not None:
-        job.set_loglevel(args.loglevel)
+        kwargs.update({'loglevel':args.loglevel})
+    job = Calcifer(fnconf=args.fnconf, section=args.section, **kwargs)
 
     if args.oneshot:
         print(f'{job._tctype_str}-type Temperature: {job.temperature}')
