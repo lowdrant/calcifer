@@ -11,7 +11,7 @@ and sending b'off' to socket
 Author: Marion Anderson
 """
 
-__all__ = ['Calcifer, temp_all']
+__all__ = ['Calcifer, temp_all', 'gen_tc_types']
 
 from argparse import ArgumentError, ArgumentParser
 from configparser import ConfigParser
@@ -24,11 +24,33 @@ from socket import error as sock_error
 from socket import socket
 from sys import stdout
 from threading import Thread
-from time import sleep
+from time import sleep, time
 
 import board
 import digitalio
 from adafruit_max31856 import MAX31856, ThermocoupleType
+
+
+def gen_tc_types():
+    """Generate allowed thermocouple types using the attributes of
+    ThermocoupleType.
+
+    Returns
+    -------
+    List of strings
+        List of thermocouple type attribute names stored as strings.
+
+    Notes
+    -----
+    Thermocouple types are 1-3 letters, all caps, attribute names of
+    ThermocoupleType. So we can use dir(ThermocoupleType) and skip anything
+    with an underscore to only keep the allowable thermocouple types.
+
+    See Also
+    --------
+    `adafruit_max31856.ThermocoupleType`
+    """
+    return [str(v) for v in dir(ThermocoupleType) if '_' not in v]
 
 
 def temp_all(spi, cs):
@@ -52,9 +74,8 @@ def temp_all(spi, cs):
     adafruit_max31856.ThermocoupleType
     """
     assert cs.direction == digitalio.Direction.OUTPUT, 'cs must be output'
-    tc_types = [v for v in dir(ThermocoupleType) if '_' not in v]  # strs
     outdict = {}
-    for k in tc_types:
+    for k in gen_tc_types():
         tctype = eval(f'ThermocoupleType.{k}')
         tc = MAX31856(spi, cs, thermocouple_type=tctype)
         outdict.update({k: tc.temperature})
@@ -62,7 +83,6 @@ def temp_all(spi, cs):
 
 
 # TODO: document attributes
-# TODO: determine reason to toggle max chip power
 class Calcifer(object):
     def  __init__(self, fnconf=None, section='DEFAULT', **kwargs_tc):
         # Config Setup
@@ -81,8 +101,11 @@ class Calcifer(object):
         # timing params
         self.T_read = float(conf[section]['T_read'])
         self.T_going = float(conf[section]['T_going'])
-        self.T_hbeat = float(conf[section]['T_hbeat'])
+        self.T_hbeat = float(conf[section]['T_hbeat'])/2  # half for on/off cycle
         self.relay_delay = float(conf[section]['relay_delay'])
+        self.drdy_count = 0  # timeout counter
+        self.drdy_count_timeout = int(conf[section]['drdy_count_timeout'])
+        self.prevdrdytime = time()
         # hysterysis temperature state thresholds
         self.thresh = float(conf[section]['thresh'])
         self.off_thresh = float(conf[section]['off_thresh'])
@@ -96,13 +119,8 @@ class Calcifer(object):
         self._tctype_str = conf[section]['tctype']  # for debugging
         self.tctype =  eval(f'ThermocoupleType.{conf[section]["tctype"]}')
         # logging
-        self.logger = Logger(__file__)
-        loglevel = eval(f'{conf[section]["loglevel"]}')
-        handler = StreamHandler(stdout)
-        handler.setLevel(loglevel)
-        formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        self.loglevel = eval(conf[section]['loglevel'])
+        self._configlogger()
 
         # Internal Setup
         self._buflen = 2  # buffer length
@@ -134,7 +152,6 @@ class Calcifer(object):
         # Socket Setup
         self.sock = socket(AF_INET, SOCK_STREAM)
 
-
         # Log
         self.logger.debug(f'Conf Settings:{conf}')
 
@@ -147,22 +164,14 @@ class Calcifer(object):
         """
         self.tc = MAX31856(self.spi, self.cs, thermocouple_type=self.tctype)
 
-    @property
-    def temperature(self):
-        """Read sensor temperature"""
-        return self.tc.temperature
-
-    def clr_tempbuf(self):
-        """Fill temperature buffer with zeros & reset buffer index."""
-        self.tempbuf = [0 for i in range(self._buflen)]
-        self.bufndx = 0
-
-    def update_tempbuf(self):
-        """Update self.tempbuf circular buffer."""
-        # set bufndx as index just filled with data
-        self.bufndx = (self.bufndx + 1) % self._buflen
-        self.logger.debug(f'drdy before read:{self.drdy.value}')
-        self.tempbuf[self.bufndx] = self.temperature
+    def _configlogger(self):
+        """Update `self.logger` with current loglevel param."""
+        self.logger = Logger(__file__)
+        handler = StreamHandler(stdout)
+        handler.setLevel(self.loglevel)
+        formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
     def set_tc_type(self, tctype):
         """Update thermocouple type.
@@ -179,6 +188,53 @@ class Calcifer(object):
         self._tctypestr = tctype
         self.tctype = eval(f'ThermocoupleType.{tctype}')
         self._configtc()
+
+    def set_loglevel(self, loglevel):
+        """Change logger loglevel
+
+        Parameters
+        ----------
+        loglevel : str/loglevel
+            logging library loglevel. Choices: 'DEBUG', 'INFO', 'WARNING',
+                                               'ERROR', 'CRITICAL'
+
+        See Also
+        --------
+        logging
+        logging.Logger
+        """
+        if str(loglevel) not in ('DEBUG','INFO','WARNING','ERROR','CRITICAL'):
+            self.logger.error(f'invalid loglevel:{loglevel}')
+            return
+        self.loglevel = eval(loglevel)
+        self._configlogger()
+
+    @property
+    def temperature(self):
+        """Read sensor temperature"""
+        return self.tc.temperature
+
+    def clr_tempbuf(self):
+        """Fill temperature buffer with zeros & reset buffer index."""
+        self.tempbuf = [0 for i in range(self._buflen)]
+        self.bufndx = 0
+
+    def update_tempbuf(self):
+        """Update self.tempbuf circular buffer."""
+        # check that data is ready to be read
+        drdyval = self.drdy.value
+        if drdyval:
+            self.bufndx = (self.bufndx + 1) % self._buflen  # current data ndx
+            self.tempbuf[self.bufndx] = self.temperature
+            self.drdy_count = 0  # reset timeout counter
+        self.logger.debug(f'drdy before read:{self.drdy.value}')
+
+        # timeout condition
+        self.logger.debug(f'drdy_count:{self.drdy_count}')
+        if self.drdy_count >= self.drdy_count_timeout:
+            self.logger.warning(f'drdy timed out; power cycling max')
+            self.powercycle_max()
+        self.drdy_count += 1  # increment timeout counter every time
 
     def soundbyte(self):
         """Play random file from `sounds/` directory."""
@@ -201,7 +257,7 @@ class Calcifer(object):
             if self.fire_going:
                 if self.tempbuf[self.bufndx] < self.off_thresh:
                     self.fire_going = False
-                    self.logger.info(f'Fire no longer going')
+                    self.logger.info(f'Fire no longer going, tempbuf:{self.tempbuf}')
                 sleep(self.T_going)
 
             else:
@@ -209,7 +265,7 @@ class Calcifer(object):
                     # TODO: log thresh cross
                     self.soundbyte()
                     self.fire_going = True
-                    self.logger.info(f'Fire going')
+                    self.logger.info(f'Fire going, tempbuf:{self.tempbuf}')
                 sleep(self.T_read)
 
         self.logger.debug(f'run thread exited. go:{self.go}')
@@ -293,6 +349,7 @@ class Calcifer(object):
         sleep(self.relay_delay)  # TODO: empirically determined
         self.relay.value = False
         self._configtc()  # call to ensure correct tc chip configuration
+        sleep(self.relay_delay)  # TODO: empirically determined
 
 
 parser = ArgumentParser('CLI for thermocouples. ' +
@@ -305,8 +362,11 @@ parser.add_argument('--characterize', action='store_true',
                     help='Thermocouple characterization interface.')
 parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
-parser.add_argument('--type', type=str, default='K',
-                    help='Specify thermocouple type from command line.')
+parser.add_argument('--type', type=str, default=None, choices=gen_tc_types(),
+                    help='Specify thermocouple type overriding config file setting.')
+parser.add_argument('--loglevel', type=str, default=None,
+                    choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                    help='Specify loglevel overriding config file setting.')
 parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
 parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in background.')
 parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop')
@@ -316,6 +376,8 @@ if __name__ == '__main__':
     job = Calcifer(fnconf=args.fnconf, section=args.section)
     if args.type is not None:  # set tc type after init for simplicity
         job.set_tc_type(args.type)
+    if args.loglevel is not None:
+        job.set_loglevel(args.loglevel)
 
     if args.oneshot:
         print(f'{job._tctype_str}-type Temperature: {job.temperature}')
@@ -381,8 +443,10 @@ if __name__ == '__main__':
     if args.run:
         # https://github.com/TaylorSMarks/playsound/issues/16
         from pygame import mixer  # pygame only used here
-        job.start()
-        job.join()
+        try:
+            job.start()
+        finally:
+            job.join()
 
     if args.stop:
         job.stop(join=False)  # can't join; threads on diff Calcifer instance
