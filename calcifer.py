@@ -330,12 +330,22 @@ class Calcifer(object):
         self.sockthread.start()
         self.hbeatthread.start()
 
+    def _wrapup(self):
+        """Release resources + turn off relays/leds."""
+        self.led.value = 0
+        self.relay.value = 0
+        try:
+            self.sock.close()
+        except sock_error as e:
+            pass
+
     def join(self):
-        """Equivalent to `thread.join`"""
+        """Calcifer instance equivalent to `thread.join`"""
         self.hbeatthread.join()
         self.sockthread.join()
         self.runthread.join()
-        self.logger.debug('All threads have join')
+        self.logger.debug('All threads have joined')
+        self._wrapup()
 
     def stop(self, join=False):
         """Stop Calcifer mainloop thread.
