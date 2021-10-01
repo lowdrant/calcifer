@@ -56,13 +56,13 @@ Wire Wire Line
 Wire Wire Line
 	7700 5650 7750 5650
 Wire Wire Line
-	9000 6450 8950 6450
+	9900 6350 9850 6350
 Wire Wire Line
 	9000 6350 8950 6350
 Wire Wire Line
-	7700 6250 7750 6250
+	9000 6450 8950 6450
 Wire Wire Line
-	7750 6350 7700 6350
+	8950 4950 9000 4950
 Text Notes 13300 3600 0    118  ~ 24
 THERMOCOUPLE
 $Comp
@@ -419,15 +419,13 @@ Wire Wire Line
 Connection ~ 12700 2150
 Wire Wire Line
 	12700 2150 12700 2200
-Text Label 9000 6450 0    50   ~ 0
+Text Label 9900 6350 0    50   ~ 0
 HBEAT
 Text Label 9000 6350 0    50   ~ 0
 FAULT
-Text Label 7700 6250 2    50   ~ 0
+Text Label 9000 6450 0    50   ~ 0
 ~TC_CS
-Text Label 7700 6350 2    50   ~ 0
-~TC_FAULT
-Text Label 7700 6450 2    50   ~ 0
+Text Label 9000 6550 0    50   ~ 0
 ~TC_DRDY
 Text Label 9000 5950 0    50   ~ 0
 ID_SC_EEPROM
@@ -546,8 +544,6 @@ Wire Wire Line
 Connection ~ 7000 6550
 Wire Wire Line
 	7000 6550 7000 6600
-NoConn ~ 8950 4950
-NoConn ~ 8950 5050
 NoConn ~ 8950 5150
 Wire Wire Line
 	8950 5250 9650 5250
@@ -557,7 +553,6 @@ Wire Wire Line
 NoConn ~ 8950 6150
 NoConn ~ 7750 6150
 NoConn ~ 7750 5250
-NoConn ~ 7750 5150
 $Comp
 L power:PWR_FLAG #FLG03
 U 1 1 616F8852
@@ -801,10 +796,6 @@ Wire Wire Line
 	14500 8500 14600 8500
 Wire Wire Line
 	14500 8900 14500 9000
-Text Label 1900 4000 2    50   ~ 0
-FAULT
-Text Label 1900 4100 2    50   ~ 0
-HBEAT
 $Comp
 L Connector_Generic:Conn_02x06_Odd_Even J4
 U 1 1 618FE1F7
@@ -1044,7 +1035,7 @@ U 1 1 615A24BF
 P 1700 9700
 F 0 "H1" H 1800 9746 50  0000 L CNN
 F 1 "MountingHole" H 1800 9655 50  0000 L CNN
-F 2 "project_footprints:NPTH_3mm_ID" H 1700 9700 50  0001 C CNN
+F 2 "MountingHole:MountingHole_2.7mm_M2.5_DIN965" H 1700 9700 50  0001 C CNN
 F 3 "~" H 1700 9700 50  0001 C CNN
 	1    1700 9700
 	1    0    0    -1  
@@ -1055,7 +1046,7 @@ U 1 1 615A280E
 P 1700 9900
 F 0 "H2" H 1800 9946 50  0000 L CNN
 F 1 "MountingHole" H 1800 9855 50  0000 L CNN
-F 2 "project_footprints:NPTH_3mm_ID" H 1700 9900 50  0001 C CNN
+F 2 "MountingHole:MountingHole_2.7mm_M2.5_DIN965" H 1700 9900 50  0001 C CNN
 F 3 "~" H 1700 9900 50  0001 C CNN
 	1    1700 9900
 	1    0    0    -1  
@@ -1066,7 +1057,7 @@ U 1 1 615AAEF7
 P 1700 10100
 F 0 "H3" H 1800 10146 50  0000 L CNN
 F 1 "MountingHole" H 1800 10055 50  0000 L CNN
-F 2 "project_footprints:NPTH_3mm_ID" H 1700 10100 50  0001 C CNN
+F 2 "MountingHole:MountingHole_2.7mm_M2.5_DIN965" H 1700 10100 50  0001 C CNN
 F 3 "~" H 1700 10100 50  0001 C CNN
 	1    1700 10100
 	1    0    0    -1  
@@ -1077,73 +1068,58 @@ U 1 1 615B3628
 P 1700 10300
 F 0 "H4" H 1800 10346 50  0000 L CNN
 F 1 "MountingHole" H 1800 10255 50  0000 L CNN
-F 2 "project_footprints:NPTH_3mm_ID" H 1700 10300 50  0001 C CNN
+F 2 "MountingHole:MountingHole_2.7mm_M2.5_DIN965" H 1700 10300 50  0001 C CNN
 F 3 "~" H 1700 10300 50  0001 C CNN
 	1    1700 10300
 	1    0    0    -1  
 $EndComp
 Wire Wire Line
-	7750 6450 7700 6450
+	8950 6550 9000 6550
 NoConn ~ 8950 5850
 Wire Wire Line
 	7100 5450 7750 5450
 Text Notes 2150 6350 0    50   ~ 0
 TODO: add sound switch to turn off sound logic
-Text Label 7700 4950 2    50   ~ 0
+Text Label 9000 5050 0    50   ~ 0
 TC_RESET
 Wire Wire Line
-	7700 4950 7750 4950
-Wire Wire Line
-	1900 4000 2000 4000
-Wire Wire Line
-	1900 4100 2000 4100
+	9000 5050 8950 5050
 $Comp
 L power:+3V3 #PWR0103
 U 1 1 61762891
-P 1400 4100
-F 0 "#PWR0103" H 1400 3950 50  0001 C CNN
-F 1 "+3V3" H 1415 4273 50  0000 C CNN
-F 2 "" H 1400 4100 50  0001 C CNN
-F 3 "" H 1400 4100 50  0001 C CNN
-	1    1400 4100
+P 1400 3900
+F 0 "#PWR0103" H 1400 3750 50  0001 C CNN
+F 1 "+3V3" H 1415 4073 50  0000 C CNN
+F 2 "" H 1400 3900 50  0001 C CNN
+F 3 "" H 1400 3900 50  0001 C CNN
+	1    1400 3900
 	1    0    0    -1  
 $EndComp
 Wire Wire Line
-	1400 4100 1400 4200
+	1400 3900 1400 4000
 Text Label 1900 3900 2    50   ~ 0
 3V3_MAX
 Wire Wire Line
 	1900 3900 2000 3900
 Wire Wire Line
-	1400 4200 2000 4200
-Text Label 1900 3700 2    50   ~ 0
+	1400 4000 2000 4000
+Text Label 1900 4200 2    50   ~ 0
 MOSI
-Text Label 1900 3800 2    50   ~ 0
+Text Label 1900 4100 2    50   ~ 0
 MISO
 Wire Wire Line
-	1900 3800 2000 3800
+	1900 4100 2000 4100
 Wire Wire Line
-	2000 3700 1900 3700
-$Comp
-L calciHATter:PI40HAT J3
-U 1 1 6157CDC4
-P 8350 4650
-F 0 "J3" H 8350 4875 50  0000 C CNN
-F 1 "PI40HAT" H 8350 4784 50  0000 C CNN
-F 2 "Connector_PinSocket_2.54mm:PinSocket_2x20_P2.54mm_Vertical" H 8350 4783 50  0001 C CNN
-F 3 "" H 7650 4650 50  0000 C CNN
-	1    8350 4650
-	1    0    0    -1  
-$EndComp
+	2000 4200 1900 4200
 NoConn ~ 7750 6050
 NoConn ~ 7750 5350
 $Comp
-L Device:R R?
+L Device:R R11
 U 1 1 6181A47C
 P 8200 8900
-F 0 "R?" V 7993 8900 50  0000 C CNN
+F 0 "R11" V 7993 8900 50  0000 C CNN
 F 1 "R" V 8084 8900 50  0000 C CNN
-F 2 "" V 8130 8900 50  0001 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_2x01_P2.54mm_Vertical" V 8130 8900 50  0001 C CNN
 F 3 "~" H 8200 8900 50  0001 C CNN
 	1    8200 8900
 	0    1    1    0   
@@ -1155,10 +1131,10 @@ Wire Wire Line
 Wire Wire Line
 	8350 8900 8550 8900
 $Comp
-L power:GND #PWR?
+L power:GND #PWR01
 U 1 1 6182C40F
 P 8550 8900
-F 0 "#PWR?" H 8550 8650 50  0001 C CNN
+F 0 "#PWR01" H 8550 8650 50  0001 C CNN
 F 1 "GND" H 8555 8727 50  0000 C CNN
 F 2 "" H 8550 8900 50  0001 C CNN
 F 3 "" H 8550 8900 50  0001 C CNN
@@ -1167,10 +1143,33 @@ F 3 "" H 8550 8900 50  0001 C CNN
 $EndComp
 Text Notes 7750 9300 0    50   ~ 0
 TODO: toggle switch for sound
-Text Label 9000 6550 0    50   ~ 0
+Text Label 7700 5150 2    50   ~ 0
 SOUND
 Wire Wire Line
-	9000 6550 8950 6550
-NoConn ~ 7750 4750
-NoConn ~ 7750 4850
+	7700 5150 7750 5150
+$Comp
+L calciHATter:PI40HAT J3
+U 1 1 6157CDC4
+P 8350 4650
+F 0 "J3" H 8350 4875 50  0000 C CNN
+F 1 "PI40HAT" H 8350 4784 50  0000 C CNN
+F 2 "Connector_PinSocket_2.54mm:PinSocket_2x20_P2.54mm_Vertical" H 8350 4783 50  0001 C CNN
+F 3 "" H 7650 4650 50  0000 C CNN
+	1    8350 4650
+	1    0    0    -1  
+$EndComp
+Text Label 9000 4950 0    50   ~ 0
+~TC_FAULT
+Wire Wire Line
+	1900 3800 2000 3800
+Wire Wire Line
+	1900 3700 2000 3700
+Text Label 1900 3800 2    50   ~ 0
+HBEAT
+Text Label 1900 3700 2    50   ~ 0
+FAULT
+Text Label 13500 4600 2    50   ~ 0
+TC+
+Text Label 13500 4900 2    50   ~ 0
+TC-
 $EndSCHEMATC
