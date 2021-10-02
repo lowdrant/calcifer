@@ -3,11 +3,26 @@
 # -----------------------------------------------------------------------------
 .vscode/
 pyenv/
+*.swp
 # -----------------------------------------------------------------------------
 # KiCAD .gitignore
 # -----------------------------------------------------------------------------
 # For PCBs designed using KiCad: http://www.kicad-pcb.org/
 # Format documentation: http://kicad-pcb.org/help/file-formats/
+
+# Gerbers
+*.gbl
+*.gps
+*.gbp
+*.gbo
+*.gm1
+*.gtl
+*.gts
+*.gtp
+*gto
+*.drl
+*.gbr
+*.gbs
 
 # Temporary files
 *.000
