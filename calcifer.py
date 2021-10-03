@@ -27,7 +27,9 @@ from threading import Thread
 from time import sleep, time
 
 import board
-import digitalio
+from digitalio import Direction as dioDirection
+from digitalio import Pull as dioPull
+from digitalio import DigitalInOut as dioDigitalInOut
 from adafruit_max31856 import MAX31856, ThermocoupleType
 
 
@@ -60,7 +62,7 @@ def temp_all(spi, cs):
     ----------
     spi : board.SPI object
         spi parameter for MAX31856 object
-    cs : digitalio.DigitalInOut object
+    cs : dioDigitalInOut object
         cs param for MAX31856 object
 
     Returns
@@ -73,7 +75,7 @@ def temp_all(spi, cs):
     adafruit_max31856.MAX31856
     adafruit_max31856.ThermocoupleType
     """
-    assert cs.direction == digitalio.Direction.OUTPUT, 'cs must be output'
+    assert cs.direction == dioDirection.OUTPUT, 'cs must be output'
     outdict = {}
     for k in gen_tc_types():
         tctype = eval(f'ThermocoupleType.{k}')
@@ -98,11 +100,14 @@ class Calcifer(object):
 
         # Read Config Params
         # - before major setup so errors avoid consuming resources
+        # logging
+        self.loglevel = eval(conf[section]['loglevel'])
+        self._configlogger()
         # timing params
         self.T_read = float(conf[section]['T_read'])
         self.T_going = float(conf[section]['T_going'])
         self.T_hbeat = float(conf[section]['T_hbeat'])/2  # half for on/off cycle
-        self.relay_delay = float(conf[section]['relay_delay'])
+        self.tc_reset_delay = float(conf[section]['tc_reset_delay'])
         self.drdy_count = 0  # timeout counter
         self.drdy_count_timeout = int(conf[section]['drdy_count_timeout'])
         self.prevdrdytime = time()
@@ -118,9 +123,6 @@ class Calcifer(object):
         # thermocouple
         self._tctype_str = conf[section]['tctype']  # for debugging
         self.tctype =  eval(f'ThermocoupleType.{conf[section]["tctype"]}')
-        # logging
-        self.loglevel = eval(conf[section]['loglevel'])
-        self._configlogger()
 
         # Internal Setup
         self._buflen = 2  # buffer length
@@ -133,33 +135,36 @@ class Calcifer(object):
 
         # Thermocouple Setup
         self.spi = eval(conf[section]['spi'])
-        self.cs = digitalio.DigitalInOut(eval(conf[section]['cs']))
-        self.cs.direction = digitalio.Direction.OUTPUT
-        self.drdy = digitalio.DigitalInOut(eval(conf[section]['drdy']))
-        self.drdy.direction = digitalio.Direction.INPUT
-        self.drdy.pull = digitalio.Pull.DOWN
+        self.cs = dioDigitalInOut(eval(conf[section]['cs']))
+        self.cs.direction = dioDirection.OUTPUT
+        self.drdy = dioDigitalInOut(eval(conf[section]['drdy']))
+        self.drdy.direction = dioDirection.INPUT
+        self.drdy.pull = dioPull.DOWN
         self._configtc()
 
-        # Power Relay Setup
-        self.relay = digitalio.DigitalInOut(eval(conf[section]['relay']))
-        self.relay.direction = digitalio.Direction.OUTPUT
-        self.relay.value = 0
+        # TC Reset Relay Setup
+        self.tc_reset = dioDigitalInOut(eval(conf[section]['tc_reset']))
+        self.tc_reset.direction = dioDirection.OUTPUT
+        self.tc_reset.value = 0
 
         # Indicator LED Setup
-        self.led = digitalio.DigitalInOut(eval(conf[section]['led']))
-        self.led.direction = digitalio.Direction.OUTPUT
-        self.led.value = 0
+        self.hbeat = dioDigitalInOut(eval(conf[section]['hbeat']))
+        self.hbeat.direction = dioDirection.OUTPUT
+        self.hbeat.value = 0
+        self.fault = dioDigitalInOut(eval(conf[section]['fault']))
+        self.fault.direction = dioDirection.OUTPUT
+        self.fault.value = 0
 
         # Sound Control Switch Setup
-        self.soundswitch = digitalio.DigitalInOut(eval(conf[section]['soundswitch']))
-        self.soundswitch.direction = digitalio.Direction.INPUT
-        self.soundswitch.pull = digitalio.Pull.UP
+        self.soundswitch = dioDigitalInOut(eval(conf[section]['soundswitch']))
+        self.soundswitch.direction = dioDirection.INPUT
+        self.soundswitch.pull = dioPull.UP
 
         # Socket Setup
         self.sock = socket(AF_INET, SOCK_STREAM)
 
         # Log
-        self.logger.debug(f'Conf Settings:{conf}')
+        self.logger.debug(f'Calcifer setup complete. Configuration:{conf}')
 
     def _configtc(self):
         """Update `self.tc` with current spi, cs, tctype params.
@@ -237,9 +242,13 @@ class Calcifer(object):
 
         # timeout condition
         self.logger.debug(f'drdy_count:{self.drdy_count}')
-        if self.drdy_count >= self.drdy_count_timeout:
-            self.logger.warning(f'drdy timed out; power cycling max')
+        if self.drdy_count < self.drdy_count_timeout:
+            self.fault.value = 0
+        else:
+            self.fault.value = 1
+            self.logger.critical(f'drdy timed out; power cycling max')
             self.powercycle_max()
+
         self.drdy_count += 1  # increment timeout counter every time
 
     def soundbyte(self):
@@ -291,6 +300,9 @@ class Calcifer(object):
                 self.go = False
                 self.sock.close()
                 self.logger.info('Shutoff signal recieved. Shutting down...')
+            else:
+                self.logger.warning(f'Socket connection sent {data} rather than off')
+                self.fault.value = 1  # turn on fault led to alert user
             self.logger.debug(
                 f'socket connection; conn:{conn} addr:{addr} data:{data} go:{self.go}'
             )
@@ -299,9 +311,9 @@ class Calcifer(object):
     def _hbeat(self):
         """Heartbeat LED execution thread. Controlled by `self.go` attribute."""
         while self.go:
-            self.led.value = (self.led.value+1)%2 if (self.T_hbeat>0) else 0  # no hbeat case
+            self.hbeat.value = not self.hbeat.value if (self.T_hbeat>0) else 0  # no hbeat case
             sleep(self.T_hbeat)
-        self.led.value = 0  # turn off led when ending program
+        self.hbeat.hbeat = 0  # turn off led when ending program
         self.logger.debug(f'hbeat thread exited. go:{self.go}')
 
     def start(self):
@@ -331,9 +343,9 @@ class Calcifer(object):
         self.hbeatthread.start()
 
     def _wrapup(self):
-        """Release resources + turn off relays/leds."""
-        self.led.value = 0
-        self.relay.value = 0
+        """Release resources + turn off relay/leds."""
+        self.hbeat.value = 0
+        self.tc_reset.value = 0
         try:
             self.sock.close()
         except sock_error as e:
@@ -364,11 +376,11 @@ class Calcifer(object):
 
     def powercycle_max(self):
         """Power cycle max chip using relay on relay pin."""
-        self.relay.value = True
-        sleep(self.relay_delay)  # TODO: empirically determined
-        self.relay.value = False
+        self.tc_reset.value = True
+        sleep(self.tc_reset_delay)  # TODO: empirically determined
+        self.tc_reset.value = False
         self._configtc()  # call to ensure correct tc chip configuration
-        sleep(self.relay_delay)  # TODO: empirically determined
+        sleep(self.tc_reset_delay)  # TODO: empirically determined
 
 
 parser = ArgumentParser('CLI for thermocouples. ' +
@@ -388,7 +400,7 @@ parser.add_argument('--loglevel', type=str, default=None,
                     help='Specify loglevel overriding config file setting.')
 parser.add_argument('--run', action='store_true', help='Run Calcifer mainloop')
 parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in background.')
-parser.add_argument('--stop', action='store_true', help='Stop Calcifer mainloop')
+parser.add_argument('--stop', action='store_true', help='Stop Calcifer backgrounded mainloop')
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -461,10 +473,19 @@ if __name__ == '__main__':
                f'--section={args.section}', f'--type={args.type}', '--run'])
 
     if args.run:
-        # https://github.com/TaylorSMarks/playsound/issues/16
-        from pygame import mixer  # pygame only used here
+        # basic install check
+        try:
+            # https://github.com/TaylorSMarks/playsound/issues/16
+            from pygame import mixer
+        except Exception as e:
+            print('Did you run `install-pygame-deps.sh`?')
+            raise e
+        # run job
         try:
             job.start()
+        except Exception as e:
+            job.fault.value = 1  # turn on fault led
+            job.logger.error(e)  # log error
         finally:
             job.join()
 
