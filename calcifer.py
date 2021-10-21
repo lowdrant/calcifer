@@ -483,11 +483,13 @@ if __name__ == '__main__':
         # run job
         try:
             job.start()
-        except Exception as e:
-            job.fault.value = 1  # turn on fault led
-            job.logger.error(e)  # log error
-        finally:
             job.join()
+        except (Exception, KeyboardInterrupt) as e:
+            job.go = False
+            if type(e) != KeyboardInterrupt:
+                job.fault.value = 1  # turn on fault led
+                job.logger.error(e)  # log error
+                raise e
 
     if args.stop:
         job.stop(join=False)  # can't join; threads on diff Calcifer instance
