@@ -33,7 +33,9 @@ Running Calcifer in the background multiple times in a row without stopping it m
 ### Configure Calcifer to Start on Boot
 Setup calcifer.py as a systemD service and enable it at boot
 ```
-> ./boot-setup.sh <your section>
+> sudo ./boot-setup.sh <your section>    # install daemon
+> sudo systemctl start calcifer.service  # start daemon
+> journatlctl -u calcifer.service        # view log output
 ```
 
 ## Customization
