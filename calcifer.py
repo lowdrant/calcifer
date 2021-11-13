@@ -164,7 +164,7 @@ class Calcifer(object):
         self.sock = socket(AF_INET, SOCK_STREAM)
 
         # Log
-        self.logger.debug(f'Calcifer setup complete. Configuration:{conf}')
+        self.logger.debug(f'Calcifer setup complete. Configuration:{dict(conf[section])}')
 
     def _configtc(self):
         """Update `self.tc` with current spi, cs, tctype params.

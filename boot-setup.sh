@@ -10,6 +10,7 @@
 
 set -o nounset
 set -o pipefail
+set -o errexit
 scriptdir="$(dirname "$(realpath "$0")")"
 
 # Print help dialog
@@ -23,13 +24,14 @@ then
 fi
 
 # Prep service options
-base="/usr/bin/python3 \""$scriptdir/"calcifer.py --section=${1:-CALCIHATTER}\""
+# use --run instead of --bg because systemd wants script to not exit
+base="/usr/bin/python3 \""$scriptdir/"calcifer.py\" --section=${1:-CALCIHATTER} --loglevel=DEBUG"
 servicetext="[Unit]
-Description=Run Calcifer program at boot. https://github.com/lowdrant/calcifer
+Description=Calcifer talking fireplace daemon. https://github.com/lowdrant/calcifer
 After=multi-user.target
 
 [Service]
-ExecStart=$base --bg &>> $scriptdir/calcifer.log
+ExecStart=$base --run
 ExecStop=$base --stop
 User=pi
 
@@ -38,6 +40,8 @@ WantedBy=multi-user.target"
 
 # Configure systemd to run service
 fnservice="/lib/systemd/system/calcifer.service"
+sudo touch "$fnservice"
 sudo echo "$servicetext" > "$fnservice"
 sudo systemctl daemon-reload
-sudo systemctl enable calcifer
+sudo systemctl enable calcifer.service
+sudo systemctl restart calcifer.service
