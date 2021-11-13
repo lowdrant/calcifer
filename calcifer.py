@@ -259,7 +259,7 @@ class Calcifer(object):
         mixer.init()
         mixer.music.load(fn)
         mixer.music.play()
-        while mixer.music.get_busy():
+        while mixer.music.get_busy():  # TODO: infinite loop
             continue
 
     def _run(self):
@@ -394,7 +394,7 @@ parser.add_argument('--characterize', action='store_true',
 parser.add_argument('--oneshot', action='store_true',
                     help='Report a single temperature reading.')
 parser.add_argument('--type', type=str, default=None, choices=gen_tc_types(),
-                    help='Specify thermocouple type overriding config file setting.')
+                    help='Specify thermocouple type; overrides config file setting.')
 parser.add_argument('--loglevel', type=str, default=None,
                     choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                     help='Specify loglevel overriding config file setting.')
