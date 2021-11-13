@@ -9,33 +9,19 @@ Raspberry Pi Talking Fireplace
 5. Run the following in the terminal:
 ```
 > git clone https://github.com/lowdrant/calcifer.git
-> sudo apt install python3-pip  # skip if pip3 installed
+> sudo apt install python3-pip           # skip if pip3 installed
 > cd calcifer
-> ./install.sh
-> python3 calcifer.py --run --section=ADAFRUIT
+> ./install.sh                           # install dependencies
+> sudo ./boot-setup.sh ADAFRUIT          # install service
+> sudo systemctl start calcifer.service  # start daemon
+> journatlctl -u calcifer.service        # view log output
 ```
 
 ### Using with calciHATter PCB
 calciHATter wiring is stored in the CALCIHATTER section of [calcifer.ini](calcifer.ini).
 ```
-> python3 calcifer.py --run --section=CALCIHATTER
-```
-
-### Run without Hanging the Terminal (Background Process)
-Running Calcifer in the background multiple times in a row without stopping it may cause problems.
-```
-> python3 calcifer.py --bg --section=<your section>
-```
-### Stop Backgrounded Calcifer Process
-```
-> python3 calcifer.py --stop --section=<your section>
-```
-### Configure Calcifer to Start on Boot
-Setup calcifer.py as a systemD service and enable it at boot
-```
-> sudo ./boot-setup.sh <your section>    # install daemon
-> sudo systemctl start calcifer.service  # start daemon
-> journatlctl -u calcifer.service        # view log output
+> sudo ./boot-setup.sh CALCIHATTER
+> sudo systemctl restart calcifer.service
 ```
 
 ## Customization
