@@ -13,6 +13,3 @@ then
     echo 'Missing libsdl2-mixer-2.0-0; Installing pygame dependencies...'
     "$scriptdir/install-pygame-deps.sh"
 fi
-
-# TODO: edit rc.local
-# TODO: put symlink in bin
