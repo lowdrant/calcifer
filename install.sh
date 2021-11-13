@@ -12,4 +12,6 @@ if [ "$installpygamedeps" = true ]
 then
     echo 'Missing libsdl2-mixer-2.0-0; Installing pygame dependencies...'
     "$scriptdir/install-pygame-deps.sh"
+else
+    echo "PyGame dependencies already installed"
 fi
