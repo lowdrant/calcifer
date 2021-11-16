@@ -180,7 +180,7 @@ class Calcifer(object):
         self.logger = Logger(__file__)
         handler = StreamHandler(stdout)
         handler.setLevel(self.loglevel)
-        formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = Formatter('%(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
 
