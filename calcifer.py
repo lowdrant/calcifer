@@ -92,7 +92,10 @@ class Calcifer(object):
             fnconf = Path(__file__).resolve().parent / 'calcifer.ini'
         self.fnconf = fnconf  # for --bg cli simply access
         conf = ConfigParser()
-        conf.read(fnconf)
+        try:
+            conf.read(fnconf)
+        except OSError as e:
+            print('os error on conf read')
 
         # Overwrite Config File
         for k, v in kwargs.items():
@@ -239,7 +242,7 @@ class Calcifer(object):
             self.tempbuf[self.bufndx] = self.temperature
             self.drdy_count = 0  # reset timeout counter
         self.logger.debug(f'drdy before read:{self.drdy.value}')
-
+        self.logger.debug(f'fault before read:{self.fault.value}')
         # timeout condition
         self.logger.debug(f'drdy_count:{self.drdy_count}')
         if self.drdy_count < self.drdy_count_timeout:
