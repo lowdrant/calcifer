@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 #
-# Configure calcifer.py to run at boot.
+# Provides CLI to configure SystemD to run calcifer.py at boot with
+# appropriate configuration parameters.
 #
-#  configures calcifer as system service
+#   usage: configure the calcifer.service daemon to calcifer.py at boot [-h] [SECTION]
+#
+#   optional arguments:
+#          -h, --help  show this help message and exit
+#          SECTION     specify config file section, defaults to CALCIHATTER
 #
 # https://www.cyberciti.biz/faq/linux-unix-run-commands-when-you-log-out/
 # https://roboticsbackend.com/make-a-raspberry-pi-3-program-start-on-boot/
@@ -16,7 +21,7 @@ scriptdir="$(dirname "$(realpath "$0")")"
 # Print help dialog
 if [ $# -gt 0 ] && ([ $1 = "-h" ] || [ $1 = "--help" ])
 then
-    printf "usage: configure calcifer.py as a service [-h] [SECTION]\n\n"
+    printf "usage: configure the calcifer.service daemon to calcifer.py at boot [-h] [SECTION]\n\n"
     printf "optional arguments:\n"
     printf "       -h, --help  show this help message and exit\n"
     printf "       SECTION     specify config file section, defaults to CALCIHATTER\n"
@@ -44,4 +49,3 @@ sudo touch "$fnservice"
 sudo echo "$servicetext" > "$fnservice"
 sudo systemctl daemon-reload
 sudo systemctl enable calcifer.service
-sudo systemctl restart calcifer.service
