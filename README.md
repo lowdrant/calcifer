@@ -1,6 +1,8 @@
 # calcifer
 Raspberry Pi Talking Fireplace
 
+![Calcifer](doc-photos/calcifer.jpg)
+
 ## Quick Start
 1. Use AdaFruit's [MAX31856 breakout board](https://www.adafruit.com/product/3263) and a fire-resistant [thermocouple](https://www.adafruit.com/product/3245) setup.
 2. Follow this [AdaFruit wiring guide](https://learn.adafruit.com/adafruit-max31856-thermocouple-amplifier/python-circuitpython) and connect `DRDY` to `Board D27` and `FAULT` to `Board D20`
