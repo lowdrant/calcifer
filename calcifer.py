@@ -84,8 +84,47 @@ def temp_all(spi, cs):
     return outdict
 
 
-# TODO: document attributes
 class Calcifer(object):
+    """
+    Stateful mainloop for Calcifer talking fireplace sensing and actuation.
+    Uses threads to run temperature checker, heartbeat, and listen for
+    shutdown command.
+
+    States
+    ------
+    go         - Mainloop state. True for running, False for shutdown
+    fire_going - Fire detected state. True if fire detected, False otherwise
+    thresh     - Celsius threshold for fire off to fire on
+    off_thresh - Celsius threshold for fire on to fire off
+
+
+    Threading
+    ---------
+    host        - IP to listen for shutdown command on
+    port        - port to listen for shutdown command on
+    sock        - socket listening for shutdown command
+    runthread   - mainloop thread - performs temperature checking and sound playing
+    sockthread  - thread for socket listening
+    hbeatthread - thread for blinking heartbeat LED
+
+    Timing
+    ------
+    T_read             - Frequency of temperature reading when fire off
+    T_going            - Frequency of temperature reading when fire going
+    T_hbeat            - Heartbeat LED frequency
+    tc_reset_delay     - Delay before repowering TC amp
+    drdy_count         - Number of times TC drdy pin hasn't been ready
+    drdy_count_timeout - max drdy_count before power cycling TC
+
+    GPIO Pins
+    ---------
+    cs          - TC amplifier chip select pins
+    drdy        - TC amplifier data ready pin
+    hbeat       - heartbeat LED pin
+    tc_reset    - TC power supply relay pin
+    fault       - fault LED
+    soundswitch - sound control pin input
+    """
     def  __init__(self, fnconf=None, section='DEFAULT', **kwargs):
         # Config Setup
         if fnconf is None:
@@ -113,7 +152,6 @@ class Calcifer(object):
         self.tc_reset_delay = float(conf[section]['tc_reset_delay'])
         self.drdy_count = 0  # timeout counter
         self.drdy_count_timeout = int(conf[section]['drdy_count_timeout'])
-        self.prevdrdytime = time()
         # hysterysis temperature state thresholds
         self.thresh = float(conf[section]['thresh'])
         self.off_thresh = float(conf[section]['off_thresh'])
@@ -259,11 +297,12 @@ class Calcifer(object):
         n = randint(0, len(self.soundfns)-1)
         fn = self.soundfns[n]
         # https://github.com/TaylorSMarks/playsound/issues/16
-        mixer.init()
         mixer.music.load(fn)
+        self.logger.debug(f'playing {fn}')
+        tstart = time()
         mixer.music.play()
         while mixer.music.get_busy():  # TODO: infinite loop
-            continue
+            self.logger.debug(f'sound playing time: {time()-tstart}s')
 
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
@@ -282,6 +321,7 @@ class Calcifer(object):
                 if self.tempbuf[self.bufndx] > self.thresh:
                     # TODO: log thresh cross
                     if self.soundswitch.value:
+                        self.logger.info('soundswitch high; playing sound')
                         self.soundbyte()
                     else:
                         self.logger.info('soundswitch low; not playing sound')
@@ -483,6 +523,7 @@ if __name__ == '__main__':
         except Exception as e:
             print('Did you run `install-pygame-deps.sh`?')
             raise e
+        mixer.init()
         # run job
         try:
             job.start()
@@ -493,6 +534,8 @@ if __name__ == '__main__':
                 job.fault.value = 1  # turn on fault led
                 job.logger.error(e)  # log error
                 raise e
+        finally:
+            mixer.quit()
 
     if args.stop:
         job.stop(join=False)  # can't join; threads on diff Calcifer instance
