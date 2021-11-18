@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-TC execution thread
-TODO: document
-
-Interrupt thread by connecting to 127.0.01 at port in calcifer.ini
-and sending b'off' to socket
-
-# TODO: document hysterysis temperature state interface
+Raspberry Pi talking fireplace execution code. Provides temperature
+measurement functions and class for executing Calcifer behavior in stateful
+manner.
 
 Author: Marion Anderson
 """
@@ -302,32 +298,36 @@ class Calcifer(object):
         tstart = time()
         mixer.music.play()
         while mixer.music.get_busy():  # TODO: infinite loop
-            self.logger.debug(f'sound playing time: {time()-tstart}s')
+            self.logger.debug(f'sound playing time: {(time()-tstart):.1f}s')
+            sleep(1)
 
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
-            self.update_tempbuf()
-            self.logger.debug(f'tempbuf:{self.tempbuf}')
-            self.logger.debug(f'fire_going:{self.fire_going}')
+            try:
+                self.update_tempbuf()
+                self.logger.debug(f'tempbuf:{self.tempbuf}')
+                self.logger.debug(f'fire_going:{self.fire_going}')
 
-            if self.fire_going:
-                if self.tempbuf[self.bufndx] < self.off_thresh:
-                    self.fire_going = False
-                    self.logger.info(f'Fire no longer going, tempbuf:{self.tempbuf}')
-                sleep(self.T_going)
+                if self.fire_going:
+                    if self.tempbuf[self.bufndx] < self.off_thresh:
+                        self.fire_going = False
+                        self.logger.info(f'Fire no longer going, tempbuf:{self.tempbuf}')
+                    sleep(self.T_going)
 
-            else:
-                if self.tempbuf[self.bufndx] > self.thresh:
-                    # TODO: log thresh cross
-                    if self.soundswitch.value:
-                        self.logger.info('soundswitch high; playing sound')
-                        self.soundbyte()
-                    else:
-                        self.logger.info('soundswitch low; not playing sound')
-                    self.fire_going = True
-                    self.logger.info(f'Fire going, tempbuf:{self.tempbuf}')
-                sleep(self.T_read)
+                else:
+                    if self.tempbuf[self.bufndx] > self.thresh:
+                        # TODO: log thresh cross
+                        if self.soundswitch.value:
+                            self.logger.info('soundswitch high; playing sound')
+                            self.soundbyte()
+                        else:
+                            self.logger.info('soundswitch low; not playing sound')
+                        self.fire_going = True
+                        self.logger.info(f'Fire going, tempbuf:{self.tempbuf}')
+                    sleep(self.T_read)
+            except Exception as e:
+                self._errlog(e)
 
         self.logger.debug(f'run thread exited. go:{self.go}')
         self.logger.info('Calcifer program ended.')
@@ -335,20 +335,23 @@ class Calcifer(object):
     def _listen(self):
         """Shutoff command listener thread. Controlled by `self.go` attribute."""
         while self.go:
-            self.sock.listen()
-            conn, addr = self.sock.accept()
-            data = conn.recv(128).decode('utf-8')
-            # TODO: log received connections
-            if data == 'off':
-                self.go = False
-                self.sock.close()
-                self.logger.info('Shutoff signal recieved. Shutting down...')
-            else:
-                self.logger.warning(f'Socket connection sent {data} rather than off')
-                self.fault.value = 1  # turn on fault led to alert user
-            self.logger.debug(
-                f'socket connection; conn:{conn} addr:{addr} data:{data} go:{self.go}'
-            )
+            try:
+                self.sock.listen()
+                conn, addr = self.sock.accept()
+                data = conn.recv(128).decode('utf-8')
+                # TODO: log received connections
+                if data == 'off':
+                    self.go = False
+                    self.sock.close()
+                    self.logger.info('Shutoff signal recieved. Shutting down...')
+                else:
+                    self.logger.warning(f'Socket connection sent {data} rather than off')
+                    self.fault.value = 1  # turn on fault led to alert user
+                self.logger.debug(
+                    f'socket connection; conn:{conn} addr:{addr} data:{data} go:{self.go}'
+                )
+            except Exception as e:
+                self._errlog(e)
         self.logger.debug(f'listen thread exited. go:{self.go}')
 
     def _hbeat(self):
@@ -425,9 +428,20 @@ class Calcifer(object):
         self._configtc()  # call to ensure correct tc chip configuration
         sleep(self.tc_reset_delay)  # TODO: empirically determined
 
+    def _errlog(e):
+        """put error on logger
 
-parser = ArgumentParser('CLI for thermocouples. ' +
-                        'Also provides thermocouple threading class')
+        Parameters
+        ----------
+        e : Exception
+        """
+        errstr = f'{e.__name__} '
+        if hasattr(e, args):
+            errstr = errstr + ' '.join(e.args)
+        self.logger.error(errstr)
+
+parser = ArgumentParser('usage: Talking fireplace interface. ' +
+                        'Also provides thermocouple characterization CLI')
 parser.add_argument('--fnconf', type=str, default=None,
                     help='Conf file for thermocouple. Defaults to calcifer.ini')
 parser.add_argument('--section', type=str, default='DEFAULT',
