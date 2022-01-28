@@ -14,6 +14,7 @@ from configparser import ConfigParser
 from logging import (CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter, Logger,
                      StreamHandler)
 from pathlib import Path
+from os import environ
 from random import randint
 from socket import AF_INET, SOCK_STREAM
 from socket import error as sock_error
@@ -278,15 +279,19 @@ class Calcifer(object):
             self.tempbuf[self.bufndx] = self.temperature
             self.drdy_count = 0  # reset timeout counter
         self.logger.debug(f'drdy before read:{self.drdy.value}')
-        self.logger.debug(f'fault before read:{self.tc_fault.value}')
+        self.logger.debug(f'tc_fault before read:{self.tc_fault.value}')
         # timeout condition
         self.logger.debug(f'drdy_count:{self.drdy_count}')
-        if self.drdy_count < self.drdy_count_timeout:
+        if self.drdy_count < self.drdy_count_timeout and self.tc_fault.value==0:
             self.fault.value = 0
         else:
             self.fault.value = 1
+        self.logger.debug(f'fault:{self.fault.value}')
+        if self.drdy_count > self.drdy_count_timeout:
             self.logger.critical(f'drdy timed out; power cycling max')
             self.powercycle_max()
+        if self.tc_fault.value:
+            self.logger.critical(f'tc_fault:{self.tc_fault.value}')
 
         self.drdy_count += 1  # increment timeout counter every time
 
@@ -295,6 +300,7 @@ class Calcifer(object):
         n = randint(0, len(self.soundfns)-1)
         fn = self.soundfns[n]
         # https://github.com/TaylorSMarks/playsound/issues/16
+        mixer.init()  # only have mixer going when playing
         mixer.music.load(fn)
         self.logger.debug(f'playing {fn}')
         tstart = time()
@@ -302,14 +308,13 @@ class Calcifer(object):
         while mixer.music.get_busy():  # TODO: infinite loop
             self.logger.debug(f'sound playing time: {(time()-tstart):.1f}s')
             sleep(1)
-
+        mixer.quit()  # stop mixer to avoid underrun
     def _run(self):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
             try:
-                if self.tc_fault.value:
-                    self.logger.critical(f'tc_fault pin high')
-                    self.fault.value = 1
+                if self.tc_fault.value == 0:
+                    self.logger.critical(f'tc_fault pin low')
 
                 self.update_tempbuf()
                 self.logger.debug(f'tempbuf:{self.tempbuf}')
@@ -475,6 +480,11 @@ parser.add_argument('--bg', action='store_true', help='Run Calcifer mainloop in 
 parser.add_argument('--stop', action='store_true', help='Stop Calcifer backgrounded mainloop')
 
 if __name__ == '__main__':
+    # prevent also underrun errors
+    # https://raspberrypi.stackexchange.com/questions/83254/pygame-and-alsa-lib-error
+    #environ['SDL_AUDIODRIVER'] = 'dsp'
+
+    # parse arguments
     args = parser.parse_args()
     kwargs = {}
     if args.type is not None:  # set tc type after init for simplicity
@@ -552,7 +562,6 @@ if __name__ == '__main__':
         except Exception as e:
             print('Did you run `install-pygame-deps.sh`?')
             raise e
-        mixer.init()
         # run job
         try:
             job.start()
