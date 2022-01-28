@@ -178,6 +178,8 @@ class Calcifer(object):
         self.drdy.direction = dioDirection.INPUT
         self.drdy.pull = dioPull.DOWN
         self._configtc()
+        self.tc_fault = dioDigitalInOut(eval(conf[section]['tc_fault']))
+        self.tc_fault.direction = dioDirection.INPUT
 
         # TC Reset Relay Setup
         self.tc_reset = dioDigitalInOut(eval(conf[section]['tc_reset']))
@@ -276,7 +278,7 @@ class Calcifer(object):
             self.tempbuf[self.bufndx] = self.temperature
             self.drdy_count = 0  # reset timeout counter
         self.logger.debug(f'drdy before read:{self.drdy.value}')
-        self.logger.debug(f'fault before read:{self.fault.value}')
+        self.logger.debug(f'fault before read:{self.tc_fault.value}')
         # timeout condition
         self.logger.debug(f'drdy_count:{self.drdy_count}')
         if self.drdy_count < self.drdy_count_timeout:
@@ -305,6 +307,10 @@ class Calcifer(object):
         """Calcifer mainloop. Controlled by `self.go` attribute."""
         while self.go:
             try:
+                if self.tc_fault.value:
+                    self.logger.critical(f'tc_fault pin high')
+                    self.fault.value = 1
+
                 self.update_tempbuf()
                 self.logger.debug(f'tempbuf:{self.tempbuf}')
                 self.logger.debug(f'fire_going:{self.fire_going}')
@@ -399,9 +405,18 @@ class Calcifer(object):
 
     def join(self):
         """Calcifer instance equivalent to `thread.join`"""
-        self.hbeatthread.join()
-        self.sockthread.join()
-        self.runthread.join()
+        try:
+            self.hbeatthread.join()
+        except Exception as e:
+            pass
+        try:
+            self.sockthread.join()
+        except Exception as e:
+            pass
+        try:
+            self.runthread.join()
+        except Exception as e:
+            pass
         self.logger.debug('All threads have joined')
         self._wrapup()
 
@@ -435,7 +450,7 @@ class Calcifer(object):
         ----------
         e : Exception
         """
-        errstr = f'{e.__name__} '
+        errstr = f'{e.__name__}: '
         if hasattr(e, args):
             errstr = errstr + ' '.join(e.args)
         self.logger.error(errstr)
