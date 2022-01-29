@@ -282,7 +282,7 @@ class Calcifer(object):
         self.logger.debug(f'tc_fault before read:{self.tc_fault.value}')
         # timeout condition
         self.logger.debug(f'drdy_count:{self.drdy_count}')
-        if self.drdy_count < self.drdy_count_timeout and self.tc_fault.value==0:
+        if self.drdy_count < self.drdy_count_timeout and self.tc_fault.value==1:
             self.fault.value = 0
         else:
             self.fault.value = 1
@@ -406,7 +406,7 @@ class Calcifer(object):
         try:
             self.sock.close()
         except sock_error as e:
-            pass
+            logger.error('Failed to close socket')
 
     def join(self):
         """Calcifer instance equivalent to `thread.join`"""
@@ -577,3 +577,4 @@ if __name__ == '__main__':
 
     if args.stop:
         job.stop(join=False)  # can't join; threads on diff Calcifer instance
+
